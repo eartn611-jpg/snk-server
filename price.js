@@ -31,7 +31,7 @@ app.get("/price/:id", async (req, res) => {
 
 app.get("/prices", async (req, res) => {
   try {
-    const ids = ["618443", "123456", "789012"];
+    const ids = ["618443", "730956", "116069"];
 
     const products = await Promise.all(ids.map((id) => getProduct(id)));
 
