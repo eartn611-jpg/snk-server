@@ -1,103 +1,63 @@
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+const express = require("express");
+const axios = require("axios");
 
-type Product = {
-  id: string;
-  price: number | null;
-  name: string;
-  image: string | null;
-};
+const app = express();
 
-export default function HomeScreen() {
-  const [products, setProducts] = useState<Product[]>([]);
+const products = [
+  {
+    id: "618443",
+    url: "https://snkrdunk.com/apparels/618443",
+  },
+  {
+    id: "116069",
+    url: "https://snkrdunk.com/apparels/116069",
+  },
+];
 
-  useEffect(() => {
-    fetch("https://snk-server.onrender.com/prices")
-      .then((res) => res.json())
-      .then((data) => {
-        setProducts(data);
-      })
-      .catch((err) => {
-        console.log("取得エラー", err);
-      });
-  }, []);
+async function getProduct(product) {
+  try {
+    const response = await axios.get(product.url);
+    const html = response.data;
 
-  if (products.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.title}>読み込み中...</Text>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+    const priceMatch =
+      html.match(/"price":\s?(\d+)/) || html.match(/"amount":\s?(\d+)/);
+
+    const nameMatch = html.match(/"name":"(.*?)"/);
+    const imageMatch = html.match(/"image":"(.*?)"/);
+
+    return {
+      id: product.id,
+      price: priceMatch ? Number(priceMatch[1]) : null,
+      name: nameMatch ? nameMatch[1] : "商品名なし",
+      image: imageMatch ? imageMatch[1] : null,
+    };
+  } catch (e) {
+    return {
+      id: product.id,
+      price: null,
+      name: "取得失敗",
+      image: null,
+    };
   }
-
-  return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>商品一覧</Text>
-
-      {products.map((item) => (
-        <View key={item.id} style={styles.card}>
-          {item.image && <Image source={{ uri: item.image }} style={styles.image} />}
-
-          <Text style={styles.name}>{item.name}</Text>
-
-          <Text style={styles.price}>
-            {item.price ? `${item.price.toLocaleString()} 円` : "価格取得失敗"}
-          </Text>
-        </View>
-      ))}
-    </ScrollView>
-  );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    padding: 10,
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 15,
-    textAlign: "center",
-    color: "#000000",
-  },
-  card: {
-    backgroundColor: "#f5f5f5",
-    padding: 15,
-    marginBottom: 15,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  image: {
-    width: 160,
-    height: 160,
-    resizeMode: "contain",
-  },
-  name: {
-    fontSize: 16,
-    marginTop: 10,
-    textAlign: "center",
-    color: "#000000",
-  },
-  price: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginTop: 8,
-    color: "#000000",
-  },
+app.get("/prices", async (req, res) => {
+  const results = await Promise.all(products.map((p) => getProduct(p)));
+  res.json(results);
+});
+
+app.get("/price/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const product = {
+    id,
+    url: `https://snkrdunk.com/apparels/${id}`,
+  };
+
+  const result = await getProduct(product);
+  res.json(result);
+});
+
+app.listen(3000, () => {
+  console.log("サーバー起動");
 });
