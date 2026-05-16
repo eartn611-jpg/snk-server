@@ -3,15 +3,19 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
+// 🔥 状態Aの売買平均価格だけ取得
 function extractPrice(text) {
-  const matches = text.match(/¥?\s?[\d,]+円|¥\s?[\d,]+/g);
-  if (!matches) return null;
+  // 状態Aブロックを切り出す
+  const block = text.match(/状態A[\s\S]{0,800}/);
+  if (!block) return null;
 
-  const prices = matches
-    .map((v) => Number(v.replace(/[^\d]/g, "")))
-    .filter((n) => n > 1000);
+  // 売買平均価格を探す
+  const match = block[0].match(
+    /売買平均価格[\s\S]{0,100}?(¥?\s?[\d,]+円|¥\s?[\d,]+)/,
+  );
+  if (!match) return null;
 
-  return prices.length ? Math.min(...prices) : null;
+  return Number(match[1].replace(/[^\d]/g, ""));
 }
 
 async function getProduct(id) {
@@ -37,7 +41,7 @@ async function getProduct(id) {
 
     await page.goto(url, {
       waitUntil: "domcontentloaded",
-      timeout: 30000,
+      timeout: 60000, // ← 少し長くする
     });
 
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -74,12 +78,6 @@ async function getProduct(id) {
 app.get("/price/:id", async (req, res) => {
   const result = await getProduct(req.params.id);
   res.json(result);
-});
-
-app.get("/prices", async (req, res) => {
-  const ids = ["618443"];
-  const results = await Promise.all(ids.map((id) => getProduct(id)));
-  res.json(results);
 });
 
 app.listen(3000, () => {
