@@ -4,12 +4,6 @@ const cheerio = require("cheerio");
 
 const app = express();
 
-const defaultProducts = [
-  { id: "618443", url: "https://snkrdunk.com/apparels/618443" },
-  { id: "730956", url: "https://snkrdunk.com/apparels/730956" },
-  { id: "116069", url: "https://snkrdunk.com/apparels/116069" },
-];
-
 function cleanText(text) {
   if (!text) return null;
   return text
@@ -38,9 +32,11 @@ function extractPrice(html) {
   return null;
 }
 
-async function getProduct(product) {
+async function getProduct(id) {
   try {
-    const response = await axios.get(product.url, {
+    const url = `https://snkrdunk.com/apparels/${id}`;
+
+    const response = await axios.get(url, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
@@ -61,14 +57,14 @@ async function getProduct(product) {
       cleanText($('meta[property="og:image"]').attr("content")) || null;
 
     return {
-      id: product.id,
+      id,
       price,
       name,
       image,
     };
   } catch (e) {
     return {
-      id: product.id,
+      id,
       price: null,
       name: "取得失敗",
       image: null,
@@ -76,20 +72,18 @@ async function getProduct(product) {
   }
 }
 
-app.get("/prices", async (req, res) => {
-  const results = await Promise.all(
-    defaultProducts.map((product) => getProduct(product)),
-  );
-  res.json(results);
+// 単体取得（←これが追加機能で使われる）
+app.get("/price/:id", async (req, res) => {
+  const result = await getProduct(req.params.id);
+  res.json(result);
 });
 
-app.get("/price/:id", async (req, res) => {
-  const id = req.params.id;
-  const result = await getProduct({
-    id,
-    url: `https://snkrdunk.com/apparels/${id}`,
-  });
-  res.json(result);
+// 複数取得（最初の表示用）
+app.get("/prices", async (req, res) => {
+  const ids = ["618443"];
+
+  const results = await Promise.all(ids.map((id) => getProduct(id)));
+  res.json(results);
 });
 
 app.listen(3000, () => {
