@@ -1,55 +1,103 @@
-const express = require("express");
-const axios = require("axios");
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
-const app = express();
+type Product = {
+  id: string;
+  price: number | null;
+  name: string;
+  image: string | null;
+};
 
-const products = [
-  {
-    id: "618443",
-    url: "https://snkrdunk.com/apparels/618443",
-  },
-  {
-    id: "116069",
-    url: "https://snkrdunk.com/apparels/116069",
-  },
-];
+export default function HomeScreen() {
+  const [products, setProducts] = useState<Product[]>([]);
 
-async function getProduct(product) {
-  try {
-    const response = await axios.get(product.url);
-    const html = response.data;
+  useEffect(() => {
+    fetch("https://snk-server.onrender.com/prices")
+      .then((res) => res.json())
+      .then((data) => {
+        setProducts(data);
+      })
+      .catch((err) => {
+        console.log("取得エラー", err);
+      });
+  }, []);
 
-    const priceMatch =
-      html.match(/"price":\s?(\d+)/) || html.match(/"amount":\s?(\d+)/);
-
-    const nameMatch = html.match(/"name":"(.*?)"/);
-    const imageMatch = html.match(/"image":"(.*?)"/);
-
-    return {
-      id: product.id,
-      price: priceMatch ? Number(priceMatch[1]) : null,
-      name: nameMatch ? nameMatch[1] : "商品名なし",
-      image: imageMatch ? imageMatch[1] : null,
-    };
-  } catch (e) {
-    return {
-      id: product.id,
-      price: null,
-      name: "取得失敗",
-      image: null,
-    };
+  if (products.length === 0) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.title}>読み込み中...</Text>
+        <ActivityIndicator size="large" />
+      </View>
+    );
   }
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>商品一覧</Text>
+
+      {products.map((item) => (
+        <View key={item.id} style={styles.card}>
+          {item.image && <Image source={{ uri: item.image }} style={styles.image} />}
+
+          <Text style={styles.name}>{item.name}</Text>
+
+          <Text style={styles.price}>
+            {item.price ? `${item.price.toLocaleString()} 円` : "価格取得失敗"}
+          </Text>
+        </View>
+      ))}
+    </ScrollView>
+  );
 }
 
-app.get("/prices", async (req, res) => {
-  try {
-    const results = await Promise.all(products.map((p) => getProduct(p)));
-    res.json(results);
-  } catch (e) {
-    res.status(500).json({ error: "取得失敗" });
-  }
-});
-
-app.listen(3000, () => {
-  console.log("サーバー起動");
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    padding: 10,
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+    color: "#000000",
+  },
+  card: {
+    backgroundColor: "#f5f5f5",
+    padding: 15,
+    marginBottom: 15,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  image: {
+    width: 160,
+    height: 160,
+    resizeMode: "contain",
+  },
+  name: {
+    fontSize: 16,
+    marginTop: 10,
+    textAlign: "center",
+    color: "#000000",
+  },
+  price: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginTop: 8,
+    color: "#000000",
+  },
 });
