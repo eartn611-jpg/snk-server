@@ -15,14 +15,20 @@ function extractPrice(text) {
 }
 
 async function getProduct(id) {
-  const url = `https://snkrdunk.com/apparels/${id}`;
-
-  const browser = await puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  let browser;
 
   try {
+    const url = `https://snkrdunk.com/apparels/${id}`;
+
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
+    });
+
     const page = await browser.newPage();
 
     await page.setUserAgent(
@@ -30,12 +36,15 @@ async function getProduct(id) {
     );
 
     await page.goto(url, {
-      waitUntil: "networkidle2",
+      waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
     const title = await page.title();
     const bodyText = await page.evaluate(() => document.body.innerText);
+
     const image = await page.evaluate(() => {
       const og = document.querySelector('meta[property="og:image"]');
       return og ? og.getAttribute("content") : null;
@@ -53,9 +62,12 @@ async function getProduct(id) {
       price: null,
       name: "取得失敗",
       image: null,
+      error: String(e),
     };
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
