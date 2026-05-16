@@ -8,7 +8,8 @@ async function getProduct(id) {
   const response = await axios.get(url);
   const html = response.data;
 
-  const priceMatch = html.match(/"price":(\d+)/);
+  const priceMatch =
+    html.match(/"price":\s?(\d+)/) || html.match(/"amount":\s?(\d+)/);
   const nameMatch = html.match(/"name":"(.*?)"/);
   const imageMatch = html.match(/"image":"(.*?)"/);
 
