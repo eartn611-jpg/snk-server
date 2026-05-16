@@ -1,31 +1,41 @@
 const express = require("express");
 const axios = require("axios");
+const cheerio = require("cheerio");
 
 const app = express();
 
 const defaultProducts = [
-  {
-    id: "618443",
-    url: "https://snkrdunk.com/apparels/618443",
-  },
-  {
-    id: "730956",
-    url: "https://snkrdunk.com/apparels/730956",
-  },
-  {
-    id: "116069",
-    url: "https://snkrdunk.com/apparels/116069",
-  },
+  { id: "618443", url: "https://snkrdunk.com/apparels/618443" },
+  { id: "730956", url: "https://snkrdunk.com/apparels/730956" },
+  { id: "116069", url: "https://snkrdunk.com/apparels/116069" },
 ];
 
 function cleanText(text) {
   if (!text) return null;
-
   return text
     .replace(/\\u0026/g, "&")
     .replace(/\\u002F/g, "/")
     .replace(/\\"/g, '"')
+    .replace(/&amp;/g, "&")
     .trim();
+}
+
+function extractPrice(html) {
+  const patterns = [
+    /"price":\s?(\d+)/,
+    /"amount":\s?(\d+)/,
+    /"lowPrice":\s?(\d+)/,
+    /"minPrice":\s?(\d+)/,
+    /"lowestPrice":\s?(\d+)/,
+    /"displayPrice":\s?(\d+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) return Number(match[1]);
+  }
+
+  return null;
 }
 
 async function getProduct(product) {
@@ -38,25 +48,23 @@ async function getProduct(product) {
     });
 
     const html = response.data;
+    const $ = cheerio.load(html);
 
-    const priceMatch =
-      html.match(/"price":\s?(\d+)/) ||
-      html.match(/"amount":\s?(\d+)/) ||
-      html.match(/"lowPrice":\s?(\d+)/) ||
-      html.match(/"minPrice":\s?(\d+)/);
+    const price = extractPrice(html);
 
-    const nameMatch =
-      html.match(/"name":"(.*?)"/) || html.match(/<title>(.*?)<\/title>/);
+    const name =
+      cleanText($('meta[property="og:title"]').attr("content")) ||
+      cleanText($("title").text()) ||
+      "商品名なし";
 
-    const imageMatch =
-      html.match(/"image":"(.*?)"/) ||
-      html.match(/property="og:image" content="(.*?)"/);
+    const image =
+      cleanText($('meta[property="og:image"]').attr("content")) || null;
 
     return {
       id: product.id,
-      price: priceMatch ? Number(priceMatch[1]) : null,
-      name: cleanText(nameMatch ? nameMatch[1] : "商品名なし"),
-      image: cleanText(imageMatch ? imageMatch[1] : null),
+      price,
+      name,
+      image,
     };
   } catch (e) {
     return {
@@ -72,19 +80,15 @@ app.get("/prices", async (req, res) => {
   const results = await Promise.all(
     defaultProducts.map((product) => getProduct(product)),
   );
-
   res.json(results);
 });
 
 app.get("/price/:id", async (req, res) => {
   const id = req.params.id;
-
-  const product = {
+  const result = await getProduct({
     id,
     url: `https://snkrdunk.com/apparels/${id}`,
-  };
-
-  const result = await getProduct(product);
+  });
   res.json(result);
 });
 
