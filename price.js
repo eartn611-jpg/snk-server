@@ -1,65 +1,50 @@
 const express = require("express");
-const axios = require("axios");
-const cheerio = require("cheerio");
+const puppeteer = require("puppeteer");
 
 const app = express();
 
-function cleanText(text) {
-  if (!text) return null;
-  return text
-    .replace(/\\u0026/g, "&")
-    .replace(/\\u002F/g, "/")
-    .replace(/\\"/g, '"')
-    .replace(/&amp;/g, "&")
-    .trim();
-}
+function extractPrice(text) {
+  const matches = text.match(/¥?\s?[\d,]+円|¥\s?[\d,]+/g);
+  if (!matches) return null;
 
-function extractPrice(html) {
-  const patterns = [
-    /"price":\s?(\d+)/,
-    /"amount":\s?(\d+)/,
-    /"lowPrice":\s?(\d+)/,
-    /"minPrice":\s?(\d+)/,
-    /"lowestPrice":\s?(\d+)/,
-    /"displayPrice":\s?(\d+)/,
-  ];
+  const prices = matches
+    .map((v) => Number(v.replace(/[^\d]/g, "")))
+    .filter((n) => n > 1000);
 
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) return Number(match[1]);
-  }
-
-  return null;
+  return prices.length ? Math.min(...prices) : null;
 }
 
 async function getProduct(id) {
-  try {
-    const url = `https://snkrdunk.com/apparels/${id}`;
+  const url = `https://snkrdunk.com/apparels/${id}`;
 
-    const response = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-      },
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  try {
+    const page = await browser.newPage();
+
+    await page.setUserAgent(
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+    );
+
+    await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
     });
 
-    const html = response.data;
-    const $ = cheerio.load(html);
-
-    const price = extractPrice(html);
-
-    const name =
-      cleanText($('meta[property="og:title"]').attr("content")) ||
-      cleanText($("title").text()) ||
-      "商品名なし";
-
-    const image =
-      cleanText($('meta[property="og:image"]').attr("content")) || null;
+    const title = await page.title();
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    const image = await page.evaluate(() => {
+      const og = document.querySelector('meta[property="og:image"]');
+      return og ? og.getAttribute("content") : null;
+    });
 
     return {
       id,
-      price,
-      name,
+      price: extractPrice(bodyText),
+      name: title || "商品名なし",
       image,
     };
   } catch (e) {
@@ -69,19 +54,18 @@ async function getProduct(id) {
       name: "取得失敗",
       image: null,
     };
+  } finally {
+    await browser.close();
   }
 }
 
-// 単体取得（←これが追加機能で使われる）
 app.get("/price/:id", async (req, res) => {
   const result = await getProduct(req.params.id);
   res.json(result);
 });
 
-// 複数取得（最初の表示用）
 app.get("/prices", async (req, res) => {
   const ids = ["618443"];
-
   const results = await Promise.all(ids.map((id) => getProduct(id)));
   res.json(results);
 });
