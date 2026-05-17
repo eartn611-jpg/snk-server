@@ -3,7 +3,6 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
-// カードは状態A平均、BOXは個数価格を単価にして平均
 async function extractPrice(page) {
   const result = await page.evaluate(() => {
     const text = document.body.innerText;
@@ -13,7 +12,6 @@ async function extractPrice(page) {
       .map((v) => v.trim().replace(/^¥/, ""))
       .filter(Boolean);
 
-    // ① カード：状態Aの売買履歴
     const start = text.indexOf("状態Aの売買履歴");
     const end = text.indexOf("状態Aの売買相場");
 
@@ -42,7 +40,6 @@ async function extractPrice(page) {
       }
     }
 
-    // ② BOX：個数価格 → 1個あたり単価
     const boxPrices = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -54,10 +51,7 @@ async function extractPrice(page) {
 
         if (/^[\d,]+$/.test(priceLine || "")) {
           const totalPrice = Number(priceLine.replace(/,/g, ""));
-
-          if (count > 0) {
-            boxPrices.push(Math.round(totalPrice / count));
-          }
+          boxPrices.push(Math.round(totalPrice / count));
         }
       }
     }
@@ -81,21 +75,38 @@ async function getProduct(id) {
 
   try {
     browser = await puppeteer.launch({
-      headless: true,
+      headless: "new",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--disable-translate",
+        "--hide-scrollbars",
+        "--mute-audio",
       ],
     });
 
     const page = await browser.newPage();
 
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const type = req.resourceType();
+      if (["font", "media"].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
     await page.setUserAgent(
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
     );
 
-    // ① まずカード用：売買履歴ページ
     const salesUrl = `https://snkrdunk.com/apparels/${id}/sales-histories?slide=right`;
 
     await page.goto(salesUrl, {
@@ -103,7 +114,7 @@ async function getProduct(id) {
       timeout: 60000,
     });
 
-    await new Promise((r) => setTimeout(r, 8000));
+    await new Promise((r) => setTimeout(r, 4000));
 
     let title = await page.title();
 
@@ -114,7 +125,6 @@ async function getProduct(id) {
 
     let price = await extractPrice(page);
 
-    // ② 状態Aが取れない商品はBOXとして商品ページを見る
     if (!price) {
       const productUrl = `https://snkrdunk.com/apparels/${id}`;
 
@@ -123,7 +133,7 @@ async function getProduct(id) {
         timeout: 60000,
       });
 
-      await new Promise((r) => setTimeout(r, 8000));
+      await new Promise((r) => setTimeout(r, 4000));
 
       title = await page.title();
 
