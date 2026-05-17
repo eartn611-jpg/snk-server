@@ -3,44 +3,75 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
-// 🔥 状態Aの売買履歴から平均価格
+// カードは状態A平均、BOXは個数価格を単価にして平均
 async function extractPrice(page) {
-  const prices = await page.evaluate(() => {
+  const result = await page.evaluate(() => {
     const text = document.body.innerText;
 
+    const lines = text
+      .split("\n")
+      .map((v) => v.trim().replace(/^¥/, ""))
+      .filter(Boolean);
+
+    // ① カード：状態Aの売買履歴
     const start = text.indexOf("状態Aの売買履歴");
     const end = text.indexOf("状態Aの売買相場");
 
-    if (start === -1 || end === -1) return [];
+    if (start !== -1 && end !== -1) {
+      const target = text.slice(start, end);
 
-    const target = text.slice(start, end);
+      const cardLines = target
+        .split("\n")
+        .map((v) => v.trim().replace(/^¥/, ""))
+        .filter(Boolean);
 
-    const lines = target
-      .split("\n")
-      .map((v) => v.trim())
-      .filter(Boolean);
+      const cardPrices = [];
 
-    const result = [];
+      for (let i = 0; i < cardLines.length; i++) {
+        if (cardLines[i] === "A") {
+          const priceLine = cardLines[i + 1];
+
+          if (/^[\d,]+$/.test(priceLine || "")) {
+            cardPrices.push(Number(priceLine.replace(/,/g, "")));
+          }
+        }
+      }
+
+      if (cardPrices.length) {
+        return { type: "card", prices: cardPrices };
+      }
+    }
+
+    // ② BOX：個数価格 → 1個あたり単価
+    const boxPrices = [];
 
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i] === "A") {
-        const priceLine = lines[i + 1];
-        const match = priceLine?.match(/^[\d,]+$/);
+      const countMatch = lines[i].match(/^(\d+)個$/);
 
-        if (match) {
-          result.push(Number(priceLine.replace(/,/g, "")));
+      if (countMatch) {
+        const count = Number(countMatch[1]);
+        const priceLine = lines[i + 1];
+
+        if (/^[\d,]+$/.test(priceLine || "")) {
+          const totalPrice = Number(priceLine.replace(/,/g, ""));
+
+          if (count > 0) {
+            boxPrices.push(Math.round(totalPrice / count));
+          }
         }
       }
     }
 
-    return result;
+    return { type: "box", prices: boxPrices };
   });
 
-  console.log("状態A価格:", prices);
+  console.log("価格タイプ:", result.type);
+  console.log("取得価格:", result.prices);
 
-  if (!prices.length) return null;
+  if (!result.prices.length) return null;
 
-  const avg = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+  const avg =
+    result.prices.reduce((sum, price) => sum + price, 0) / result.prices.length;
 
   return Math.round(avg);
 }
@@ -49,7 +80,7 @@ async function getProduct(id) {
   let browser;
 
   try {
-    const url = `https://snkrdunk.com/apparels/${id}/sales-histories?slide=right`;
+    const url = `https://snkrdunk.com/apparels/${id}`;
 
     browser = await puppeteer.launch({
       headless: true,
@@ -71,7 +102,6 @@ async function getProduct(id) {
       timeout: 60000,
     });
 
-    // 🔥 JS読み込み待ち
     await new Promise((r) => setTimeout(r, 8000));
 
     const title = await page.title();
