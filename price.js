@@ -1,9 +1,31 @@
 const express = require("express");
 const puppeteer = require("puppeteer");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 
-// 🔥 カードは状態A、BOXは「1個」価格
+const PRODUCTS_PATH = path.join(__dirname, "products.json");
+const HISTORY_PATH = path.join(__dirname, "history.json");
+
+// 履歴読み込み
+function loadHistory() {
+  if (!fs.existsSync(HISTORY_PATH)) return {};
+  return JSON.parse(fs.readFileSync(HISTORY_PATH, "utf-8"));
+}
+
+// 履歴保存
+function saveHistory(history) {
+  fs.writeFileSync(HISTORY_PATH, JSON.stringify(history, null, 2));
+}
+
+// 商品ID読み込み
+function loadProducts() {
+  if (!fs.existsSync(PRODUCTS_PATH)) return [];
+  return JSON.parse(fs.readFileSync(PRODUCTS_PATH, "utf-8"));
+}
+
+// カードは状態A、BOXは1個価格
 async function extractPrice(page) {
   const result = await page.evaluate(() => {
     const text = document.body.innerText;
@@ -13,9 +35,7 @@ async function extractPrice(page) {
       .map((v) => v.trim().replace(/^¥/, ""))
       .filter(Boolean);
 
-    // =========================
-    // ① カード（状態A）
-    // =========================
+    // カード：状態A
     const start = text.indexOf("状態Aの売買履歴");
     const end = text.indexOf("状態Aの売買相場");
 
@@ -44,9 +64,7 @@ async function extractPrice(page) {
       }
     }
 
-    // =========================
-    // ② BOX（1個の価格だけ）
-    // =========================
+    // BOX：1個価格のみ
     const oneBoxPrices = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -73,6 +91,7 @@ async function extractPrice(page) {
   return Math.round(avg);
 }
 
+// 商品取得
 async function getProduct(id) {
   let browser;
 
@@ -96,7 +115,6 @@ async function getProduct(id) {
 
     const page = await browser.newPage();
 
-    // 軽量化
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const type = req.resourceType();
@@ -111,7 +129,7 @@ async function getProduct(id) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
     );
 
-    // ① カード優先
+    // まずカード用：売買履歴
     const salesUrl = `https://snkrdunk.com/apparels/${id}/sales-histories?slide=right`;
 
     await page.goto(salesUrl, {
@@ -130,7 +148,7 @@ async function getProduct(id) {
 
     let price = await extractPrice(page);
 
-    // ② BOX fallback
+    // カードで取れなかったらBOX用：商品ページ
     if (!price) {
       const productUrl = `https://snkrdunk.com/apparels/${id}`;
 
@@ -172,9 +190,63 @@ async function getProduct(id) {
   }
 }
 
+// 価格取得API
 app.get("/price/:id", async (req, res) => {
   const result = await getProduct(req.params.id);
   res.json(result);
+});
+
+// 履歴取得API
+app.get("/history/:id", (req, res) => {
+  const history = loadHistory();
+  const id = req.params.id;
+
+  res.json({
+    id,
+    history: history[id] || [],
+  });
+});
+
+// 外部cron用API
+app.get("/cron", async (req, res) => {
+  const ids = loadProducts();
+  const history = loadHistory();
+
+  console.log("cron開始:", ids);
+
+  for (const id of ids) {
+    const data = await getProduct(id);
+
+    if (!data.price) {
+      console.log(`${id}: priceなし`);
+      continue;
+    }
+
+    if (!history[id]) {
+      history[id] = [];
+    }
+
+    history[id].push({
+      date: new Date().toISOString(),
+      price: data.price,
+      name: data.name,
+      image: data.image,
+    });
+
+    history[id] = history[id].slice(-100);
+
+    console.log(`${id}: ${data.price}円 保存`);
+
+    // Renderのメモリ対策
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  saveHistory(history);
+
+  res.json({
+    ok: true,
+    updated: ids.length,
+  });
 });
 
 app.listen(3000, () => {
