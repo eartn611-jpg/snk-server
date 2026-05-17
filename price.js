@@ -3,6 +3,7 @@ const puppeteer = require("puppeteer");
 
 const app = express();
 
+// 🔥 カードは状態A、BOXは「1個」価格
 async function extractPrice(page) {
   const result = await page.evaluate(() => {
     const text = document.body.innerText;
@@ -12,6 +13,9 @@ async function extractPrice(page) {
       .map((v) => v.trim().replace(/^¥/, ""))
       .filter(Boolean);
 
+    // =========================
+    // ① カード（状態A）
+    // =========================
     const start = text.indexOf("状態Aの売買履歴");
     const end = text.indexOf("状態Aの売買相場");
 
@@ -40,23 +44,22 @@ async function extractPrice(page) {
       }
     }
 
-    const boxPrices = [];
+    // =========================
+    // ② BOX（1個の価格だけ）
+    // =========================
+    const oneBoxPrices = [];
 
     for (let i = 0; i < lines.length; i++) {
-      const countMatch = lines[i].match(/^(\d+)個$/);
-
-      if (countMatch) {
-        const count = Number(countMatch[1]);
+      if (lines[i] === "1個") {
         const priceLine = lines[i + 1];
 
         if (/^[\d,]+$/.test(priceLine || "")) {
-          const totalPrice = Number(priceLine.replace(/,/g, ""));
-          boxPrices.push(Math.round(totalPrice / count));
+          oneBoxPrices.push(Number(priceLine.replace(/,/g, "")));
         }
       }
     }
 
-    return { type: "box", prices: boxPrices };
+    return { type: "box_1個", prices: oneBoxPrices };
   });
 
   console.log("価格タイプ:", result.type);
@@ -93,6 +96,7 @@ async function getProduct(id) {
 
     const page = await browser.newPage();
 
+    // 軽量化
     await page.setRequestInterception(true);
     page.on("request", (req) => {
       const type = req.resourceType();
@@ -107,6 +111,7 @@ async function getProduct(id) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
     );
 
+    // ① カード優先
     const salesUrl = `https://snkrdunk.com/apparels/${id}/sales-histories?slide=right`;
 
     await page.goto(salesUrl, {
@@ -125,6 +130,7 @@ async function getProduct(id) {
 
     let price = await extractPrice(page);
 
+    // ② BOX fallback
     if (!price) {
       const productUrl = `https://snkrdunk.com/apparels/${id}`;
 
