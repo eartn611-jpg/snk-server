@@ -80,8 +80,6 @@ async function getProduct(id) {
   let browser;
 
   try {
-    const url = `https://snkrdunk.com/apparels/${id}`;
-
     browser = await puppeteer.launch({
       headless: true,
       args: [
@@ -97,21 +95,45 @@ async function getProduct(id) {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
     );
 
-    await page.goto(url, {
+    // ① まずカード用：売買履歴ページ
+    const salesUrl = `https://snkrdunk.com/apparels/${id}/sales-histories?slide=right`;
+
+    await page.goto(salesUrl, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
 
     await new Promise((r) => setTimeout(r, 8000));
 
-    const title = await page.title();
+    let title = await page.title();
 
-    const image = await page.evaluate(() => {
+    let image = await page.evaluate(() => {
       const og = document.querySelector('meta[property="og:image"]');
       return og ? og.getAttribute("content") : null;
     });
 
-    const price = await extractPrice(page);
+    let price = await extractPrice(page);
+
+    // ② 状態Aが取れない商品はBOXとして商品ページを見る
+    if (!price) {
+      const productUrl = `https://snkrdunk.com/apparels/${id}`;
+
+      await page.goto(productUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 60000,
+      });
+
+      await new Promise((r) => setTimeout(r, 8000));
+
+      title = await page.title();
+
+      image = await page.evaluate(() => {
+        const og = document.querySelector('meta[property="og:image"]');
+        return og ? og.getAttribute("content") : null;
+      });
+
+      price = await extractPrice(page);
+    }
 
     return {
       id,
